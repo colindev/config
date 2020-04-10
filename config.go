@@ -25,10 +25,6 @@ type Config struct {
 	wc *fsnotify.Watcher
 }
 
-func Watch(fname string, parser func([]byte) (interface{}, error), updater func(interface{})) {
-
-}
-
 func New(fname string, parser func(b []byte) (interface{}, error)) (conf *Config, err error) {
 
 	watcher, err := fsnotify.NewWatcher()
@@ -42,14 +38,13 @@ func New(fname string, parser func(b []byte) (interface{}, error)) (conf *Config
 	}
 
 	conf = &Config{
-		stopChan:   make(chan struct{}, 1),
-		updateChan: make(chan struct{}, 1),
-		filePath:   fname,
-		parser:     parser,
-		wc:         watcher,
+		stopChan: make(chan struct{}, 1),
+		filePath: fname,
+		parser:   parser,
+		wc:       watcher,
 	}
 
-	conf.updateChan <- struct{}{}
+	err = conf.init()
 
 	return
 
@@ -84,13 +79,25 @@ func (conf *Config) Watch(updater func(interface{})) {
 			if err := conf.update(updater); err != nil {
 				log.Println("update error:", err)
 			}
-
-		case <-conf.updateChan:
-			if err := conf.update(updater); err != nil {
-				log.Println("update error:", err)
-			}
 		}
 	}
+}
+
+func (conf *Config) init() error {
+
+	b, hash, err := read(conf.filePath)
+	if err != nil {
+		return err
+	}
+	conf.Lock()
+	conf.hash = hash
+	conf.config, err = conf.parser(b)
+	conf.Unlock()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (conf *Config) update(updater func(interface{})) error {
