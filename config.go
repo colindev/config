@@ -38,10 +38,11 @@ func New(fname string, parser func(b []byte) (interface{}, error)) (conf *Config
 	}
 
 	conf = &Config{
-		stopChan: make(chan struct{}, 1),
-		filePath: fname,
-		parser:   parser,
-		wc:       watcher,
+		stopChan:   make(chan struct{}, 1),
+		updateChan: make(chan struct{}, 1),
+		filePath:   fname,
+		parser:     parser,
+		wc:         watcher,
 	}
 
 	err = conf.init()
@@ -58,17 +59,23 @@ func (conf *Config) Config() interface{} {
 	return c
 }
 
+func (conf *Config) UpdateNow() {
+	conf.updateChan <- struct{}{}
+}
+
 func (conf *Config) Watch(updater func(interface{})) {
 
 	for {
 		select {
 		case <-conf.stopChan:
 			return
+
 		case err, ok := <-conf.wc.Errors:
 			if !ok {
 				return
 			}
 			log.Println("fsnotify error:", err)
+
 		case event, ok := <-conf.wc.Events:
 
 			if !ok {
@@ -76,9 +83,16 @@ func (conf *Config) Watch(updater func(interface{})) {
 			}
 
 			log.Printf("fsnotify event: %#v %s\n", event, event)
-			if err := conf.update(updater); err != nil {
+			if err := conf.update(updater, false); err != nil {
 				log.Println("update error:", err)
 			}
+
+		case <-conf.updateChan:
+			log.Println("force update")
+			if err := conf.update(updater, true); err != nil {
+				log.Println("update error:", err)
+			}
+
 		}
 	}
 }
@@ -100,7 +114,7 @@ func (conf *Config) init() error {
 	return nil
 }
 
-func (conf *Config) update(updater func(interface{})) error {
+func (conf *Config) update(updater func(interface{}), force bool) error {
 
 	b, hash, err := read(conf.filePath)
 
@@ -108,7 +122,7 @@ func (conf *Config) update(updater func(interface{})) error {
 		return err
 	}
 
-	if conf.hash != hash {
+	if conf.hash != hash || force {
 		conf.Lock()
 		conf.hash = hash
 		conf.config, err = conf.parser(b)

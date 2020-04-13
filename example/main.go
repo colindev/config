@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"os"
@@ -35,7 +36,7 @@ num: 0
 	go func() {
 		n := 0
 		for {
-			time.Sleep(time.Second * 3)
+			time.Sleep(time.Second * 10)
 			n = n + 1
 			f.Truncate(0)
 			f.Seek(0, 0)
@@ -57,19 +58,34 @@ num: %d
 	}
 
 	go func() {
-		time.Sleep(20 * time.Second)
+		time.Sleep(60 * time.Second)
 		conf.Stop()
 	}()
 
 	go func() {
 		for {
 			log.Println(conf.Config())
-			time.Sleep(1 * time.Second)
+			time.Sleep(5 * time.Second)
 		}
 	}()
 
+	go func() {
+
+		buf := bufio.NewReader(os.Stdin)
+		for {
+			line, _, err := buf.ReadLine()
+			if err != nil {
+				log.Println("<error:", err)
+				continue
+			}
+			log.Println("<", string(line))
+			conf.UpdateNow()
+		}
+
+	}()
+
 	conf.Watch(func(o interface{}) {
-		log.Printf("%#v\n", o)
+		log.Printf("watch: %#v\n", o)
 	})
 
 }
